@@ -6,10 +6,11 @@ using System.IO;
 
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Server.Models;
 
@@ -19,7 +20,7 @@ namespace Server
     {
         // Load application settings from JSON file(s)
         // https://docs.asp.net/en/latest/fundamentals/configuration.html
-        public Startup(IHostingEnvironment env)
+        public Startup(IHostEnvironment env)
         {
             Configuration = new ConfigurationBuilder()
                 .SetBasePath(env.ContentRootPath)
@@ -35,7 +36,7 @@ namespace Server
         public void ConfigureServices(IServiceCollection services)
         {
             // https://docs.asp.net/en/latest/security/anti-request-forgery.html
-            services.AddAntiforgery(options => options.CookieName =  options.HeaderName = "X-XSRF-TOKEN");
+            services.AddAntiforgery(options => options.HeaderName = "X-XSRF-TOKEN");
 
             // Register Entity Framework database context
             // https://docs.efproject.net/en/latest/platforms/aspnetcore/new-db.html
@@ -44,23 +45,24 @@ namespace Server
                 options.UseSqlServer(Configuration.GetConnectionString("DefaultConnection"));
             });
 
-            services.AddIdentity<User, IdentityRole>()
+
+            services.AddIdentity<User, Role>()
                 .AddEntityFrameworkStores<DatabaseContext>()
                 .AddDefaultTokenProviders();
 
             services.AddMvcCore()
                 .AddAuthorization()
                 .AddViews()
-                .AddRazorViewEngine()
-                .AddJsonFormatters();
+                .AddRazorViewEngine();
         }
 
-        public void Configure(IApplicationBuilder app, IHostingEnvironment env, ILoggerFactory factory)
+        public void Configure(IApplicationBuilder app)
         {
             // Configure logging
             // https://docs.asp.net/en/latest/fundamentals/logging.html
-            factory.AddConsole(Configuration.GetSection("Logging"));
-            factory.AddDebug();
+            var builder = WebApplication.CreateBuilder();
+            builder.Logging.ClearProviders();
+            builder.Logging.AddConsole();
 
             // Serve static files
             // https://docs.asp.net/en/latest/fundamentals/static-files.html
@@ -68,25 +70,23 @@ namespace Server
 
             // Enable external authentication provider(s)
             // https://docs.asp.net/en/latest/security/authentication/sociallogins.html
-            app.UseIdentity();
-
-            if (!string.IsNullOrEmpty(Configuration["Authentication:Facebook:AppId"]))
-            {
-                app.UseFacebookAuthentication(new FacebookOptions
+            builder.Services.AddAuthentication()
+                .AddFacebook(facebookOptions =>
                 {
-                    AppId = Configuration["Authentication:Facebook:AppId"],
-                    AppSecret = Configuration["Authentication:Facebook:AppSecret"],
-                    Scope = { "email" },
-                    Fields = { "name", "email" },
-                    SaveTokens = true,
+                    facebookOptions.AppId = Configuration["Authentication:Facebook:AppId"];
+                    facebookOptions.AppSecret = Configuration["Authentication:Facebook:AppSecret"];
+                    facebookOptions.Scope.Add("email");
+                    facebookOptions.Fields.Add("name");
+                    facebookOptions.Fields.Add("email");
+                    facebookOptions.SaveTokens = true;
                 });
-            }
 
             // Configure ASP.NET MVC
             // https://docs.asp.net/en/latest/mvc/index.html
-            app.UseMvc(routes =>
+            app.UseRouting();
+            app.UseEndpoints(endpoint =>
             {
-                routes.MapRoute("default", "{*url}", new { controller = "Home", action = "Index" });
+                endpoint.MapControllerRoute(name:"default", pattern:"{controller=Home}/{action=Index}");
             });
         }
 
